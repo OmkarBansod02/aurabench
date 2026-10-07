@@ -35,3 +35,46 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 # aurabench
+
+## Phase 1: PingAura connectivity spike
+
+Run from the project root with Node.js 22.13 or newer:
+
+```bash
+npm ci
+npm run spike:pingaura
+```
+
+Provide these variables in the ignored `.env.local` file or your shell environment
+(shell values take precedence):
+
+```dotenv
+PINGAURA_MCP_URL=https://www.pingaura.ai/api/mcp
+PINGAURA_API_KEY=your-api-key
+```
+
+The standalone [script](scripts/pingaura-spike.mts) uses the official
+`@modelcontextprotocol/client` v2 SDK and Streamable HTTP. It authenticates with
+`Authorization: Key ...`, discovers all tool pages, and prints each tool's name,
+description and input schema. See the [SDK documentation](https://github.com/modelcontextprotocol/typescript-sdk)
+and [PingAura documentation](https://www.pingaura.ai/docs/mcp/mcp-server).
+
+Only the exact documented read tool `list-domains` can be called, once with `{}`.
+If it is unavailable, requires arguments, or has contradictory safety annotations,
+the call is skipped. All other tools are ineligible, including unknown tools.
+The script prints call status and latency, omits account response data, rejects
+HTTP redirects, uses 20 second request timeouts, and closes the connection.
+Failures exit nonzero without logging raw errors or credentials.
+
+This spike requires no Next.js server. It adds no application routes or UI and
+does not use the database or OpenAI variables.
+
+```bash
+npm run test:spike
+npx tsc --noEmit
+npm run lint
+```
+
+Verified on 2026-10-07: authenticated discovery returned **52 tools**; exactly one
+`list-domains` call succeeded in **204.49 ms**. No mutation tool was called.
+This satisfies Phase 1 / Gate 1; later phases are not implemented.

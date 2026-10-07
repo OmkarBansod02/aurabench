@@ -6,9 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "spike:pingaura": "node --experimental-strip-types --env-file-if-exists=.env.local scripts/pingaura-spike.mts",
+    "test:spike": "node --experimental-strip-types scripts/pingaura-spike.test.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
