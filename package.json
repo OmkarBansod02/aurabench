@@ -10,7 +10,8 @@
     "spike:pingaura": "node --experimental-strip-types --env-file-if-exists=.env.local scripts/pingaura-spike.mts",
     "test:spike": "node --experimental-strip-types scripts/pingaura-spike.test.mjs",
     "spike:agent": "node --experimental-strip-types --env-file-if-exists=.env.local scripts/agent-spike.mts",
-    "test:agent": "node --experimental-strip-types scripts/agent-spike.test.mjs"
+    "test:agent": "node --experimental-strip-types scripts/agent-spike.test.mjs",
+    "test:evals": "node --experimental-strip-types scripts/evals.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.3.1",
