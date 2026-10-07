@@ -77,4 +77,50 @@ npm run lint
 
 Verified on 2026-10-07: authenticated discovery returned **52 tools**; exactly one
 `list-domains` call succeeded in **204.49 ms**. No mutation tool was called.
-This satisfies Phase 1 / Gate 1; later phases are not implemented.
+This satisfies Phase 1 / Gate 1.
+
+## Phase 2: Read-only agent spike
+
+Set `OPENAI_API_KEY` alongside the PingAura variables above. Optionally set
+`OPENAI_MODEL` (defaults to `gpt-5`). Run:
+
+```bash
+npm run spike:agent
+# Optional scenario override:
+npm run spike:agent -- "Find my highest-priority site health problems."
+npm run test:agent
+```
+
+The default scenario asks for the highest-priority site health problems and what
+to fix first. The runner uses OpenAI Responses function calling over HTTPS with
+native `fetch`, executes calls sequentially through `lib/mcp/gateway.mts`, and
+returns results to the model. `MAX_AGENT_STEPS = 10` caps model requests, including
+the final-answer turn. Exhausting the cap produces a failed run and retains the
+trace. Model requests have a 60-second timeout; MCP requests use 20 seconds.
+
+Tool schemas come from live MCP discovery. Exact reviewed read/write names in
+`lib/mcp/guard.mts` come from PingAura's public tool documentation. Everything
+else is unknown and blocked, even with a read-only annotation. Contradictory
+annotations veto read permissions. Discovery currently returns 52 tools: 15 read,
+15 write, and 22 unknown. Review undocumented tools before changing this policy.
+
+The raw MCP client remains private to the connection module. The gateway checks
+every requested name independently of the schemas exposed to the model. It
+records sequence, arguments, status, result/error, start/completion times,
+latency, blocked flag, and risk level. JSON/object argument checks happen locally;
+PingAura handles schema-specific validation. Tool errors and denials go back to
+the model. No mutation is executed.
+
+The CLI prints the final answer, tool sequence, call and success/failure counts,
+each call's latency, total agent-loop latency, and available aggregate token
+usage. The total includes model calls and excludes connection/discovery. Traces
+and conversation history remain in memory; OpenAI requests use `store: false`.
+Full tool results are sent to OpenAI as part of the agent conversation. CLI output
+redacts configured keys and the endpoint. No database, routes, UI, or eval/replay
+features are added. The Phase 1 script remains unchanged and independent.
+
+Verified live on 2026-10-07: the model selected `list-domains` (489.09 ms) and
+`get-site-health-summary` (200.39 ms). Both succeeded, with zero failed or blocked
+calls and no mutations. The run reached a final answer in 3 model turns,
+36,795.79 ms, and 7,779 tokens. The account had no completed site audits, which
+the answer reported rather than claiming observed audit issues.

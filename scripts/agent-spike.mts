@@ -1,0 +1,40 @@
+import { connectPingAura } from "../lib/mcp/client.mts";
+import { createOpenAIResponder } from "../lib/llm/client.mts";
+import { INITIAL_SCENARIO, runAgent } from "../lib/agent/runner.mts";
+
+const secrets = [process.env.PINGAURA_API_KEY, process.env.OPENAI_API_KEY, process.env.PINGAURA_MCP_URL]
+  .map(value => value?.trim()).filter((value): value is string => Boolean(value));
+const print = (value: string) => console.log(secrets.reduce(
+  (text, secret) => text.split(secret).join("[REDACTED]"), value,
+));
+
+let connection: Awaited<ReturnType<typeof connectPingAura>> | undefined;
+try {
+  const respond = createOpenAIResponder();
+  connection = await connectPingAura();
+  const { gateway } = connection;
+  const counts = { read: 0, write: 0, unknown: 0 };
+  for (const tool of gateway.discovery) counts[tool.riskLevel]++;
+  print(`Discovered ${gateway.discovery.length} tools: ${counts.read} read, ${counts.write} write, ${counts.unknown} unknown.`);
+  const result = await runAgent({
+    scenario: process.argv.slice(2).join(" ").trim() || INITIAL_SCENARIO,
+    gateway, respond, model: process.env.OPENAI_MODEL?.trim() || "gpt-5",
+  });
+  print(`\nFinal answer\n${result.finalAnswer || "(none)"}`);
+  if (result.error) print(`Run error: ${result.error}`);
+  print(`\nTool sequence\n${result.traces.map(t => `${t.sequence}. ${t.toolName} — ${t.status} (${t.riskLevel})`).join("\n") || "(none)"}`);
+  const successes = result.traces.filter(t => t.status === "success").length;
+  print(`\nTool-call count: ${result.traces.length}\nSuccess/failure count: ${successes}/${result.traces.length - successes} (includes blocked calls)`);
+  print(`Per-tool latency:\n${result.traces.map(t => `${t.sequence}. ${t.toolName}: ${t.latencyMs} ms`).join("\n") || "(none)"}`);
+  print(`Total latency: ${result.latencyMs} ms (agent loop, including model calls)\nAgent steps: ${result.steps}`);
+  print(`Token usage: ${result.usage ? JSON.stringify(result.usage) : "unavailable"}`);
+  if (result.status === "error") process.exitCode = 1;
+} catch {
+  print("Agent spike failed. Check PINGAURA_MCP_URL, PINGAURA_API_KEY, OPENAI_API_KEY, model access and network availability.");
+  process.exitCode = 1;
+} finally {
+  await connection?.close().catch(() => {
+    print("MCP connection cleanup failed.");
+    process.exitCode = 1;
+  });
+}
