@@ -41,14 +41,16 @@ export function formatComparison(name: string, comparison: Comparison): string {
   const { baseline: b, candidate: c } = comparison;
   const tokens = (value: number | null) => value === null ? "unknown" : `${(value / 1000).toFixed(1)}k`;
   const row = (label: string, baseline: string | number, candidate: string | number) =>
-    `${label.padEnd(16)}${String(baseline).padStart(12)}${String(candidate).padStart(12)}`;
+    `${label.padEnd(20)} ${String(baseline).padStart(18)} ${String(candidate).padStart(18)}`;
   return [
     `Regression: ${name}`, "", row("", "Baseline", "Candidate"),
     row("Score", b.score, c.score), row("Tool calls", b.toolCalls, c.toolCalls),
     row("Failures", b.failures, c.failures), row("Latency", `${(b.latencyMs / 1000).toFixed(1)}s`, `${(c.latencyMs / 1000).toFixed(1)}s`),
     row("Tokens", tokens(b.tokens), tokens(c.tokens)), "",
     `Score delta: ${comparison.scoreDelta >= 0 ? "+" : ""}${comparison.scoreDelta}`,
-    `Result: ${comparison.result}`, "", "Baseline sequence:", comparison.baselineToolSequence.join(" → ") || "(none)",
+    `Regression comparison: ${comparison.result}`,
+    row("Agent evaluation", comparison.baselineEvaluation.passed ? "PASS" : "FAIL", comparison.candidateEvaluation.passed ? "PASS" : "FAIL"),
+    row("Task outcome", comparison.baselineEvaluation.taskOutcome.status, comparison.candidateEvaluation.taskOutcome.status), "", "Baseline sequence:", comparison.baselineToolSequence.join(" → ") || "(none)",
     "", "Candidate sequence:", comparison.candidateToolSequence.join(" → ") || "(none)",
   ].join("\n");
 }

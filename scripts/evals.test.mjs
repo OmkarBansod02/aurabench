@@ -213,15 +213,98 @@ test("80 is the inclusive pass threshold when all hard gates are met", () => {
 test("CLI formatter prints scores, result, and human-readable findings", () => {
   const formatted = formatEvaluation(evaluate());
   assert.match(formatted, /Evaluation\n──────────/);
-  assert.match(formatted, /Completion +40 \/ 40/);
+  assert.match(formatted, /Execution +40 \/ 40/);
   assert.match(formatted, /Tool selection +25 \/ 25/);
   assert.match(formatted, /Total +100 \/ 100/);
-  assert.match(formatted, /Result +PASS/);
+  assert.match(formatted, /Agent evaluation +PASS/);
   assert.match(formatted, /Findings\n✓/);
   const run = ideal();
   run.traces.push(trace("run-site-audit", {}, { status: "blocked", blocked: true, riskLevel: "write" }));
   run.usage.totalTokens = 12_001;
-  assert.match(formatEvaluation(evaluate(run)), /Result +FAIL/);
+  assert.match(formatEvaluation(evaluate(run)), /Agent evaluation +FAIL/);
   assert.match(formatEvaluation(evaluate(run)), /✗/);
   assert.match(formatEvaluation(evaluate(run)), /⚠/);
+});
+
+const evidence = (payload) => ({ content: [{ type: "text", text: JSON.stringify(payload) }] });
+
+test("recorded no-audits evidence separates high quality from task fulfillment", () => {
+  const run = ideal();
+  run.traces[1].result = evidence({ hasAudits: false, message: "No audits completed yet." });
+  const result = evaluate(run);
+  assert.equal(result.totalScore, 100);
+  assert.equal(result.passed, true);
+  assert.equal(result.taskOutcome.status, "insufficient_data");
+  assert.match(formatEvaluation(result), /Task outcome +insufficient_data/);
+});
+
+test("nonempty answers, absent, malformed and positive audit evidence cannot prove fulfillment", () => {
+  for (const result of [{ content: [] }, { content: [{ type: "text", text: "not JSON" }] }, evidence({ hasAudits: true })]) {
+    const run = ideal();
+    run.finalAnswer = "Everything is done.";
+    run.traces[1].result = result;
+    assert.equal(evaluate(run).taskOutcome.status, "unknown");
+  }
+});
+
+test("outcome uses structuredContent, scopes site health, and rejects failed or contradictory evidence", () => {
+  const run = ideal();
+  run.traces[1].result = { content: [], structuredContent: { hasAudits: false } };
+  assert.equal(evaluate(run).taskOutcome.status, "insufficient_data");
+  assert.equal(evaluateRun({ ...SITE_HEALTH_EVAL, scenario: "List domains" }, "List domains", run).taskOutcome.status, "unknown");
+  run.traces.push(trace("get-site-health-summary", {}, { result: evidence({ hasAudits: true }) }));
+  assert.equal(evaluate(run).taskOutcome.status, "unknown");
+  run.traces.pop();
+  for (const overrides of [{ status: "error" }, { blocked: true }, { result: { ...evidence({ hasAudits: false }), isError: true } }]) {
+    const changed = structuredClone(run);
+    Object.assign(changed.traces[1], overrides);
+    assert.equal(evaluate(changed).taskOutcome.status, "unknown");
+  }
+  assert.equal(evaluate({ ...run, status: "error", error: "fatal" }).taskOutcome.status, "failed");
+  run.finalAnswer = "Here are your top five issues.";
+  assert.equal(evaluate(run).taskOutcome.status, "unknown");
+});
+
+test("successful retry after equivalent failures keeps failure deductions but is not redundant", () => {
+  const run = ideal();
+  run.traces.unshift(trace("list-domains", "{}", { status: "error", result: null,
+    error: "Tool request failed: invalid arguments, timeout, or MCP error." }));
+  const result = evaluate(run);
+  assert.equal(result.totalScore, 97);
+  assert.equal(result.findings.filter(f => f.code === "tool_failure").length, 1);
+  assert.equal(has(result, "duplicate_call"), false);
+  run.traces.push(trace("list-domains"));
+  assert.equal(evaluate(run).findings.filter(f => f.code === "duplicate_call").length, 1);
+});
+
+test("repeated argument errors keep every failure penalty; changed arguments are not duplicates", () => {
+  const run = ideal();
+  run.traces.unshift(trace("list-domains", "{bad", { status: "error" }), trace("list-domains", "{bad", { status: "error" }));
+  const result = evaluate(run);
+  assert.equal(result.toolSelectionScore, 19);
+  assert.equal(result.findings.filter(f => f.code === "tool_failure").length, 2);
+  assert.equal(has(result, "duplicate_call"), false);
+});
+
+test("persisted live answer excerpts acknowledge missing audits with varied wording", () => {
+  for (const answer of [
+    "There are no completed Site Health audits for this domain, so there’s no issue data to rank yet.",
+    "I checked your PingAura account and couldn’t find any completed Site Health audits yet, so I don’t have issue data to rank.",
+    "I checked your PingAura account and don’t see any completed Site Health audits yet.",
+  ]) {
+    const run = ideal();
+    run.finalAnswer = answer;
+    run.traces[1].result = evidence({ hasAudits: false });
+    assert.equal(evaluate(run).taskOutcome.status, "insufficient_data");
+  }
+});
+
+test("a failed equivalent attempt resets duplicate detection even after an earlier success", () => {
+  const run = ideal();
+  run.traces.push(trace("list-domains", {}, { status: "error", result: null }), trace("list-domains"));
+  const result = evaluate(run);
+  assert.equal(has(result, "duplicate_call"), false);
+  assert.equal(result.toolSelectionScore, 22);
+  run.traces.push(trace("list-domains"));
+  assert.equal(evaluate(run).findings.filter(f => f.code === "duplicate_call").length, 1);
 });

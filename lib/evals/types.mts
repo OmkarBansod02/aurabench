@@ -22,7 +22,13 @@ export interface Finding {
   message: string;
 }
 
+export interface TaskOutcome {
+  status: "completed" | "insufficient_data" | "failed" | "unknown";
+  reason: string;
+}
+
 export interface EvalResult {
+  taskOutcome: TaskOutcome;
   evalCaseId: string;
   completionScore: number;
   toolSelectionScore: number;

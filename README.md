@@ -300,3 +300,85 @@ Production uses `pg`; PGlite is a test-only dependency.
 Set `TEST_DATABASE_URL` to a disposable PostgreSQL database to run the same
 suite through the production `pg` driver instead. It applies migrations and
 leaves test fixtures in that database; it does not read `DATABASE_URL` implicitly.
+
+## Frontend: AuraBench run and regression lab
+
+Start PostgreSQL with the existing migrated AuraBench database, configure
+`DATABASE_URL`, `PINGAURA_MCP_URL`, `PINGAURA_API_KEY`, and `OPENAI_API_KEY` in
+`.env.local`, then run `npm run dev`. Optional `OPENAI_MODEL` sets the initial
+model selector; otherwise it uses `gpt-5`. No secret is sent to the browser.
+
+The focused workflow is:
+
+- `/`: enter a scenario, select prompt/model, run the agent, and open recent executions.
+- `/runs/[id]`: inspect the chronological trace, expandable/copyable JSON,
+  deterministic evaluation, findings, and final answer. Completed runs can be
+  saved as regressions, including completed runs that fail evaluation.
+- `/regressions`: open saved cases.
+- `/regressions/[id]`: review the baseline and saved tool/group expectations and
+  budgets, select a candidate, replay live, and open previous comparisons.
+- `/compare/[candidateRunId]`: compare both runs against identical saved rules,
+  including score, calls, failures, latency, tokens, and occurrence-aware sequence differences.
+
+Three mutation routes delegate to the existing `RegressionService`:
+`POST /api/runs`, `POST /api/regressions`, and
+`POST /api/regressions/[id]/replay`. Read pages query `RunStore` on the server.
+Invalid input returns 400; missing records return 404; failed saves return 409;
+infrastructure errors return a sanitized 503. The database is checked before
+paid execution. Provider/MCP failures remain persisted as failed runs and are
+inspectable in the UI. Requests wait for completion; there is no trace streaming.
+If a browser connection drops, check recent executions before retrying.
+
+Initial runs use the existing site-health eval rules, even if the scenario is
+edited; this is explicitly labeled in the form. Saving preserves tool groups,
+token/latency budgets, and the immutable write/unknown blocking policy. Replay
+is live-only; data and timing may change between executions. Comparison PASS
+requires passing required behavior and a total score at least equal to baseline.
+
+Validation:
+
+```bash
+npx tsc --noEmit
+npm run lint
+npm run test:spike
+npm run test:agent
+npm run test:evals
+npm run test:regressions
+npm run test:web
+npm run build
+```
+
+The new web tests cover input validation, sanitized infrastructure errors,
+unsupported replay/provider rejection, and ordered tool sequence diffs with
+duplicates. Existing PostgreSQL tests additionally cover product read queries.
+No mocks or fixed comparison values are used by the product.
+
+### Phase 7A: evaluation correctness
+
+Agent evaluation PASS scores execution, required tool behavior, safety, and efficiency;
+its legacy `completionScore` field now appears as execution and requirements in the UI.
+Task outcome is separate (`completed`, `insufficient_data`, `failed`, `unknown`).
+For site-health requests, successful structured MCP evidence of `hasAudits: false`
+and an answer acknowledging the missing audits establish `insufficient_data`.
+Fatal execution errors establish `failed`. Unrecognized evidence, conflicting audit
+availability, and free-form fulfillment that cannot be verified remain `unknown`.
+The current contract has no reliable positive fulfillment signal, so the classifier
+does not emit `completed` merely because audits exist or an answer is nonempty.
+
+Outcomes are derived on read from immutable run metadata and traces; no migration,
+backfill, or historical evaluation rewrite is needed. Run pages retain original
+scores/findings; comparison pages explicitly rescore both sides under current rules.
+Comparison PASS still requires a passing candidate and a nonnegative score delta.
+
+An equivalent call following a failed attempt is a retry, not automatically a
+duplicate. Every failure retains its existing penalty and reliability count.
+Repeated successful equivalent calls still incur duplicate deductions. Sequence
+comparison pairs LCS-unmatched tool-name occurrences as reorderings before showing
+additions/removals; extra occurrences are labeled separately. It does not compare
+arguments or infer whether an occurrence was a legitimate retry.
+
+The recorded first `list-domains` error in v2 run
+`500f2ec3-5432-41ff-8a67-ffbad2538241` has `{}` arguments, a null result, and a
+sanitized generic error. The next identical call succeeded. The original exception
+was not retained, so transport/service failure versus argument validation cannot
+be determined from that historical trace.

@@ -166,7 +166,7 @@ test("comparison math and formatted output reflect real persisted sequences and 
   assert.deepEqual(c.candidateToolSequence, ["list-domains", "get-site-health-summary"]);
   assert.equal(c.result, "PASS");
   const text = formatComparison(saved.name, c);
-  for (const expected of [/Regression: Site health prioritization/, /Score delta: \+10/, /Result: PASS/, /Baseline sequence:/, /Candidate sequence:/]) assert.match(text, expected);
+  for (const expected of [/Regression: Site health prioritization/, /Score delta: \+10/, /Regression comparison: PASS/, /Baseline sequence:/, /Candidate sequence:/]) assert.match(text, expected);
 });
 
 test("missing baseline fails before replay can execute", async () => {
@@ -288,4 +288,34 @@ test("database protects referenced baseline and unique evaluation per run", asyn
   const { id: ignored, createdAt, ...duplicate } = stored.evaluation;
   void ignored; void createdAt;
   await assert.rejects(db.insert(evalResults).values(duplicate));
+});
+
+test('product read queries return real run status, baseline attachments and replay history', async () => {
+  const { service, id } = await baseline();
+  const saved = await service.saveAsRegression(id, 'Product read queries');
+  const { candidateRunId } = await service.replay(saved.id, { promptVersion: 'v2' });
+  assert.ok((await store.listCases()).some(c => c.id === saved.id));
+  assert.ok((await store.casesForBaseline(id)).some(c => c.id === saved.id));
+  const history = await store.candidatesForCase(saved.id);
+  assert.ok(history.some(c => c.run.id === candidateRunId && c.passed));
+  assert.ok(history.every(c => c.run.id !== id));
+  const recent = await store.listRuns();
+  assert.ok(recent.length <= 20);
+  assert.ok(recent.some(c => c.run.id === candidateRunId && c.evalCaseId === saved.id));
+});
+
+test("derived outcomes and comparison rescoring never rewrite historical evaluations or traces", async () => {
+  const { service, id } = await baseline();
+  await db.update(runs).set({ score: 92 }).where(eq(runs.id, id));
+  await db.update(evalResults).set({ totalScore: 92 }).where(eq(evalResults.runId, id));
+  const original = await store.getRun(id);
+  const saved = await service.saveAsRegression(id, "Preserve historical score");
+  const { comparison } = await service.replay(saved.id);
+  assert.equal(original.evaluation.taskOutcome.status, "insufficient_data");
+  assert.equal(comparison.baseline.score, 100);
+  const after = await store.getRun(id);
+  assert.equal(after.run.score, 92);
+  assert.equal(after.evaluation.totalScore, 92);
+  assert.deepEqual(after.traces, original.traces);
+  assert.deepEqual(after.evaluation.findings, original.evaluation.findings);
 });

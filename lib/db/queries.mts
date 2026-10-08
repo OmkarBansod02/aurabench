@@ -1,7 +1,8 @@
-import { asc, eq } from "drizzle-orm";
+import { classifyTaskOutcome } from "../evals/outcome.mts";
+import { asc, desc, eq } from "drizzle-orm";
 import type { runAgent } from "../agent/runner.mts";
 import { evaluateRun } from "../evals/evaluate.mts";
-import type { EvalCase } from "../evals/types.mts";
+import type { EvalCase, TaskOutcome } from "../evals/types.mts";
 import type { ToolTrace } from "../mcp/types.mts";
 import type { Database } from "./index.mts";
 import { evalCases, evalResults, runs, traceSteps } from "./schema.mts";
@@ -11,7 +12,7 @@ export type SavedCase = typeof evalCases.$inferSelect;
 export interface StoredRun {
   run: typeof runs.$inferSelect;
   traces: ToolTrace[];
-  evaluation: typeof evalResults.$inferSelect;
+  evaluation: typeof evalResults.$inferSelect & { taskOutcome: TaskOutcome };
 }
 
 export function caseRules(saved: SavedCase): EvalCase {
@@ -24,7 +25,7 @@ export function caseRules(saved: SavedCase): EvalCase {
   };
 }
 
-export function evalInput(stored: StoredRun) {
+export function evalInput(stored: Pick<StoredRun, "run" | "traces">) {
   const { run, traces } = stored;
   return {
     status: run.status === "completed" ? "success" as const : "error" as const,
@@ -38,6 +39,27 @@ export function evalInput(stored: StoredRun) {
 export class RunStore {
   readonly db: Database;
   constructor(db: Database) { this.db = db; }
+
+  async listRuns() {
+    return this.db.select({ run: runs, passed: evalResults.passed, evalCaseId: evalResults.evalCaseId })
+      .from(runs).innerJoin(evalResults, eq(runs.id, evalResults.runId))
+      .orderBy(desc(runs.createdAt)).limit(20);
+  }
+
+  async listCases() {
+    return this.db.select().from(evalCases).orderBy(desc(evalCases.createdAt)).limit(100);
+  }
+
+  async casesForBaseline(runId: string) {
+    return this.db.select().from(evalCases).where(eq(evalCases.baselineRunId, runId))
+      .orderBy(desc(evalCases.createdAt)).limit(100);
+  }
+
+  async candidatesForCase(evalCaseId: string) {
+    return this.db.select({ run: runs, passed: evalResults.passed }).from(runs)
+      .innerJoin(evalResults, eq(runs.id, evalResults.runId))
+      .where(eq(evalResults.evalCaseId, evalCaseId)).orderBy(desc(runs.createdAt)).limit(20);
+  }
 
   async persistRun(scenario: string, result: AgentResult, rules: EvalCase, evalCaseId?: string): Promise<string> {
     const evaluation = evaluateRun(rules, scenario, result);
@@ -76,11 +98,13 @@ export class RunStore {
     const [evaluation] = await this.db.select().from(evalResults).where(eq(evalResults.runId, id));
     if (!evaluation) throw new Error("Run evaluation is missing.");
     const rows = await this.db.select().from(traceSteps).where(eq(traceSteps.runId, id)).orderBy(asc(traceSteps.sequence));
-    return { run, evaluation, traces: rows.map(t => ({
+    const traces = rows.map(t => ({
       sequence: t.sequence, toolName: t.toolName, arguments: t.argumentsJson, result: t.resultJson,
       status: t.status, startedAt: t.startedAt, completedAt: t.completedAt, latencyMs: t.latencyMs,
       error: t.errorMessage, blocked: t.blocked, riskLevel: t.riskLevel,
-    })) };
+    }));
+    const input = { run, traces };
+    return { run, traces, evaluation: { ...evaluation, taskOutcome: classifyTaskOutcome(run.scenario, evalInput(input)) } };
   }
 
   async insertCase(baselineRunId: string, rules: EvalCase): Promise<SavedCase> {
