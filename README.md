@@ -186,3 +186,117 @@ npm run test:spike
 npx tsc --noEmit
 npm run lint
 ```
+
+## Phase 4: Persistence, regressions, live replay, and comparison
+
+The backend now persists agent runs using Drizzle and PostgreSQL. The existing
+`spike:agent` command also requires the database and saves each finished run,
+including model failures, its complete trace, and its deterministic evaluation.
+The pure `runAgent` function remains independent of storage for testing.
+No UI or API routes were added.
+
+Add this variable to `.env.local`, alongside the existing PingAura/OpenAI keys:
+
+```dotenv
+DATABASE_URL=postgresql://user:password@localhost:5432/aurabench
+```
+
+Create an empty PostgreSQL database, then run:
+
+```bash
+npm run db:migrate
+npm run demo:regression
+# Optionally compare different models too:
+npm run demo:regression -- --baseline-model gpt-5 --candidate-model gpt-5
+```
+
+The demo runs the site-health scenario live with prompt v1, saves that completed
+run as a regression, replays it live with prompt v2, and prints metrics, score
+delta, PASS/FAIL, and both tool sequences. It prints the baseline, regression,
+and candidate IDs for later retrieval. A failing comparison exits nonzero.
+Traces and scores are real; prompt v1 is simpler, but model behavior and live
+data do not guarantee an improvement. This account's rules require domain
+listing and a health summary, not unavailable audit issues.
+
+Prompts live in `lib/agent/prompts.mts`. Both versions preserve the read-only
+instruction and treat tool output as untrusted. Each replay creates a fresh MCP
+connection/gateway and uses the existing runner and evaluator. Write and unknown
+tools remain blocked independently of the prompt and saved expectations.
+
+The four application tables are defined in `lib/db/schema.mts`:
+
+| Table | Contents |
+| --- | --- |
+| `runs` | Scenario, model, prompt version, completed/failed status, answer/error, timestamps, latency, nullable token usage, attempted/failed/blocked-write counts, total score. |
+| `trace_steps` | Ordered attempts with original arguments, full MCP results, status/error, timestamps, latency, blocked flag, risk. A unique run/sequence index preserves ordering. |
+| `eval_cases` | Name, scenario, baseline FK, required tools/groups, forbidden tools and write/unknown risks, call/token/latency budgets, successful-completion requirement. |
+| `eval_results` | One result per run, optional regression FK, exact expectation snapshot, category/total scores, pass flag, findings. |
+
+A run, its traces, and its evaluation commit in one transaction. Foreign keys
+protect referenced baselines; missing token usage remains null. Failures count
+all unsuccessful attempts, including blocked calls, consistent with the prior
+CLI. Setup failures in the service also persist as failed runs with normalized
+errors. Database failures surface to the caller; persistence is never silently
+skipped. Drizzle maintains its own migration journal, separate from the four
+application tables. Use `npm run db:generate` after changing the schema.
+The node-postgres setup follows [Drizzle's PostgreSQL guide](https://orm.drizzle.team/docs/get-started/postgresql-new).
+
+`RegressionService` in `lib/regressions/service.mts` exposes:
+
+```ts
+const database = openDatabase();
+const service = new RegressionService(new RunStore(database.db));
+try {
+  const baselineId = await service.run({
+    scenario: SITE_HEALTH_EVAL.scenario, model: "gpt-5", promptVersion: "v1",
+  }, SITE_HEALTH_EVAL);
+  const regression = await service.saveAsRegression(baselineId, "Site health prioritization");
+  const { candidateRunId, comparison } = await service.replay(regression.id, {
+    promptVersion: "v2", model: "gpt-5",
+  });
+  // Retrieve later without executing another agent:
+  await service.compare(regression.id, candidateRunId);
+} finally {
+  await database.close();
+}
+```
+
+Saving defaults to the baseline's expectation snapshot, rather than treating
+every observed call as required. It accepts explicit overrides for
+`requiredTools`, `requiredToolGroups`, `forbiddenTools`, `maxToolCalls`,
+`maxTokens`, and `maxLatencyMs`. Groups require at least one successful member;
+all groups and individual required tools must be satisfied. A completed run
+can be saved even when it scored poorly. A failed run cannot become a baseline.
+Successful completion and rejection of write/unknown attempts remain mandatory.
+
+Comparison is computed on demand without a comparisons table. Both sides are
+rescored against the saved regression rules, so overrides cannot create an
+unfair comparison with the baseline's original evaluation. The original run
+score and evaluation remain recorded. All deltas are **candidate minus
+baseline**: score, completion/tool-selection/safety/efficiency, attempted calls,
+failures, latency in milliseconds, and total tokens. If either token count is
+unknown, the token delta is null. PASS requires a completed candidate, the
+existing evaluator's pass conditions, and a nonnegative total score delta.
+Equal scores pass; a lower score fails even when the candidate passes its eval.
+Latency and token differences reflect current live data and provider behavior;
+this phase does not provide frozen replay.
+
+```bash
+npm run test:regressions
+npm run test:evals
+npm run test:agent
+npm run test:spike
+npx tsc --noEmit
+npm run lint
+```
+
+The regression suite runs the committed migration and repository SQL against
+[PGlite embedded PostgreSQL](https://pglite.dev/docs/orm-support), with no server,
+network, or credentials needed. Scripted model responses drive the actual
+runner and gateway. Coverage includes run/trace persistence, transaction rollback,
+regression expectations, replay with changed prompt/model, comparison math,
+missing baselines, failed candidates, unknown tokens, and write/unknown blocking.
+Production uses `pg`; PGlite is a test-only dependency.
+Set `TEST_DATABASE_URL` to a disposable PostgreSQL database to run the same
+suite through the production `pg` driver instead. It applies migrations and
+leaves test fixtures in that database; it does not read `DATABASE_URL` implicitly.

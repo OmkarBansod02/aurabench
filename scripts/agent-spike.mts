@@ -4,15 +4,20 @@ import { INITIAL_SCENARIO, runAgent } from "../lib/agent/runner.mts";
 import { evaluateRun } from "../lib/evals/evaluate.mts";
 import { SITE_HEALTH_EVAL } from "../lib/evals/site-health.mts";
 import { formatEvaluation } from "../lib/evals/format.mts";
+import { openDatabase } from "../lib/db/index.mts";
+import { RunStore } from "../lib/db/queries.mts";
 
-const secrets = [process.env.PINGAURA_API_KEY, process.env.OPENAI_API_KEY, process.env.PINGAURA_MCP_URL]
+const secrets = [process.env.PINGAURA_API_KEY, process.env.OPENAI_API_KEY, process.env.PINGAURA_MCP_URL, process.env.DATABASE_URL]
   .map(value => value?.trim()).filter((value): value is string => Boolean(value));
 const print = (value: string) => console.log(secrets.reduce(
   (text, secret) => text.split(secret).join("[REDACTED]"), value,
 ));
 
 let connection: Awaited<ReturnType<typeof connectPingAura>> | undefined;
+let database: ReturnType<typeof openDatabase> | undefined;
 try {
+  database = openDatabase();
+  await database.db.execute("select id from runs limit 0");
   const respond = createOpenAIResponder();
   connection = await connectPingAura();
   const { gateway } = connection;
@@ -39,13 +44,16 @@ try {
   };
   if (scenario !== INITIAL_SCENARIO) print("\nCustom scenario: no required tool behavior configured; evaluating run, safety, and efficiency only.");
   print(`\n${formatEvaluation(evaluateRun(evalCase, scenario, result))}`);
+  const runId = await new RunStore(database.db).persistRun(scenario, result, evalCase);
+  print(`Persisted run: ${runId}`);
   if (result.status === "error") process.exitCode = 1;
 } catch {
-  print("Agent spike failed. Check PINGAURA_MCP_URL, PINGAURA_API_KEY, OPENAI_API_KEY, model access and network availability.");
+  print("Agent spike failed. Check DATABASE_URL/migrations, PingAura and OpenAI credentials, model access and network availability.");
   process.exitCode = 1;
 } finally {
   await connection?.close().catch(() => {
     print("MCP connection cleanup failed.");
     process.exitCode = 1;
   });
+  await database?.close();
 }

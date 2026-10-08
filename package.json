@@ -11,19 +11,28 @@
     "test:spike": "node --experimental-strip-types scripts/pingaura-spike.test.mjs",
     "spike:agent": "node --experimental-strip-types --env-file-if-exists=.env.local scripts/agent-spike.mts",
     "test:agent": "node --experimental-strip-types scripts/agent-spike.test.mjs",
-    "test:evals": "node --experimental-strip-types scripts/evals.test.mjs"
+    "test:evals": "node --experimental-strip-types scripts/evals.test.mjs",
+    "db:generate": "drizzle-kit generate --config=drizzle.config.mts",
+    "db:migrate": "node --experimental-strip-types --env-file-if-exists=.env.local scripts/db-migrate.mts",
+    "demo:regression": "node --experimental-strip-types --env-file-if-exists=.env.local scripts/regression-demo.mts",
+    "test:regressions": "node --experimental-strip-types scripts/regressions.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.3.1",
+    "drizzle-orm": "^0.45.3",
     "next": "16.4.0",
+    "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.11",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
     "tailwindcss": "^4",
