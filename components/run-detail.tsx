@@ -97,9 +97,9 @@ export function RunDetail({
           <FinalAnswer answer={run.finalAnswer} />
         </div>
         <aside className="run-aside" aria-label="Evaluation">
-          <EvaluationBreakdown evaluation={evaluation} />
+          <EvaluationBreakdown evaluation={evaluation} title="Original run score" />
           <p className="aside-note">
-            Scores and findings are the evaluation persisted with this run.
+            Original scores and findings were persisted at execution. Regression scores use the current evaluator and saved expectations and may differ.
             Task outcome is derived from recorded evidence.
           </p>
         </aside>

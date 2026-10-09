@@ -319,3 +319,31 @@ test("derived outcomes and comparison rescoring never rewrite historical evaluat
   assert.deepEqual(after.traces, original.traces);
   assert.deepEqual(after.evaluation.findings, original.evaluation.findings);
 });
+
+test("historical 92 retry score stays immutable while history and comparison rescore to 95", async () => {
+  const { service, id } = await baseline();
+  const saved = await service.saveAsRegression(id, "Retry score contexts", { maxToolCalls: 3 });
+  const execute = async input => {
+    const result = await executor(["list-domains", "list-domains", "get-site-health-summary", "list-site-pages"])(input);
+    // One equivalent failed attempt followed by success; fourth call succeeds too.
+    Object.assign(result.traces[0], { status: "error", result: null, error: "Recorded MCP error" });
+    Object.assign(result.traces[3], { status: "success", error: null });
+    return result;
+  };
+  const candidateService = new RegressionService(store, execute);
+  const candidateId = await candidateService.run({ ...options, promptVersion: "v2" }, caseRules(saved), saved.id);
+  await db.update(runs).set({ score: 92 }).where(eq(runs.id, candidateId));
+  await db.update(evalResults).set({ totalScore: 92, toolSelectionScore: 20, efficiencyScore: 12,
+    findings: [{ type: "warning", code: "duplicate_call", message: "Historical duplicate deduction" }] })
+    .where(eq(evalResults.runId, candidateId));
+  const original = await store.getRun(candidateId);
+  const history = await candidateService.compare(saved.id, candidateId);
+  const detail = await candidateService.compare(saved.id, candidateId);
+  assert.equal(history.candidate.score, 95);
+  assert.deepEqual(history, detail);
+  assert.equal(history.candidateEvaluation.passed, true);
+  assert.equal(history.result, "FAIL"); // Passing candidate still scores below the 100 baseline.
+  assert.equal(history.candidateEvaluation.findings.some(f => f.code === "duplicate_call"), false);
+  assert.equal((await store.listRuns()).find(r => r.run.id === candidateId).run.score, 92);
+  assert.deepEqual(await store.getRun(candidateId), original);
+});

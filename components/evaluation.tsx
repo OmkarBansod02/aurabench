@@ -62,7 +62,7 @@ export function EvaluationBreakdown({
           value={e.totalScore}
           max={100}
           tone={scoreTone(e.totalScore)}
-          label={`Agent score ${e.totalScore} of 100`}
+          label={`${title} ${e.totalScore} of 100`}
         />
         <dl className="eval-categories">
           {CATEGORIES.map(({ key, label, max }) => (

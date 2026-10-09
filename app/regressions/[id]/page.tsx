@@ -83,6 +83,7 @@ export default async function RegressionPage({
               step={1}
               id="baseline-heading"
               title="Saved baseline"
+              meta="Original run score · persisted at execution"
               actions={<TextLink href={`/runs/${b.id}`}>Inspect trace</TextLink>}
             />
             <div className="baseline-summary">
@@ -219,21 +220,21 @@ export default async function RegressionPage({
         <SectionHeader
           id="history-heading"
           title="Replay history"
-          meta={candidates.length ? `Latest ${candidates.length}` : undefined}
+          meta="Regression scores · current evaluator · saved expectations"
         />
         {candidates.length ? (
           <div className="data-table history-table" role="table" aria-label="Replay history">
             <div className="data-row data-head" role="row">
               <span role="columnheader">Regression</span>
               <span role="columnheader">Candidate</span>
-              <span role="columnheader" className="num">Score Δ</span>
+              <span role="columnheader" className="num">Regression score Δ</span>
               <span role="columnheader">Agent eval</span>
               <span role="columnheader" className="num">Calls</span>
               <span role="columnheader" className="num">Latency</span>
               <span role="columnheader">Replayed</span>
               <span role="columnheader"><span className="sr-only">Open</span></span>
             </div>
-            {candidates.map(({ run, passed, comparison }) => (
+            {candidates.map(({ run, comparison }) => (
                 <Link className="data-row" role="row" href={`/compare/${run.id}`} key={run.id}>
                   <span role="cell"><Verdict passed={comparison.result === "PASS"} label="" size="sm" /></span>
                   <span role="cell"><ModelChip model={run.model} prompt={run.promptVersion} /></span>
@@ -243,7 +244,7 @@ export default async function RegressionPage({
                       {comparison.scoreDelta === 0 ? "±0" : comparison.scoreDelta > 0 ? `+${comparison.scoreDelta}` : comparison.scoreDelta}
                     </span>
                   </span>
-                  <span role="cell" className={passed ? "text-success" : "text-danger"}>{passed ? "Pass" : "Fail"}</span>
+                  <span role="cell" className={comparison.candidateEvaluation.passed ? "text-success" : "text-danger"}>{comparison.candidateEvaluation.passed ? "Pass" : "Fail"}</span>
                   <span role="cell" className="num mono">{run.toolCallCount}</span>
                   <span role="cell" className="num mono">{duration(run.latencyMs)}</span>
                   <span role="cell" className="muted">{timestamp(run.createdAt)}</span>

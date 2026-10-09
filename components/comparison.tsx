@@ -14,7 +14,7 @@ import type { Comparison } from "@/lib/regressions/compare.mts";
 import type { StoredRun } from "@/lib/db/queries.mts";
 import type { ToolTrace } from "@/lib/mcp/types.mts";
 import { duration, percentage, signed, tokens } from "@/lib/web/format";
-import { sequenceDiff } from "@/lib/web/sequence.mts";
+import { retryIndexes, sequenceDiff } from "@/lib/web/sequence.mts";
 import { cn } from "@/lib/utils";
 import { FindingList, CATEGORIES } from "./evaluation";
 import { ModelChip, OutcomeBadge, ScoreValue, Tag, Verdict, type Tone } from "./common";
@@ -96,14 +96,14 @@ export function VerdictBanner({
           ))}
         </ul>
       </div>
-      <div className="verdict-scores" aria-label="Agent score, baseline to candidate">
+      <div className="verdict-scores" aria-label="Regression score, baseline to candidate">
         <div>
-          <span className="verdict-score-label">Baseline</span>
+          <span className="verdict-score-label">Baseline · Regression score</span>
           <ScoreValue score={c.baseline.score} size="xl" />
         </div>
         <ArrowRight size={20} className="verdict-arrow" aria-hidden="true" />
         <div>
-          <span className="verdict-score-label">Candidate</span>
+          <span className="verdict-score-label">Candidate · Regression score</span>
           <ScoreValue score={c.candidate.score} size="xl" />
         </div>
         <DeltaChip tone={deltaTone(c.scoreDelta, true)}>
@@ -152,7 +152,7 @@ export function ComparisonTable({
   const ce = c.candidateEvaluation;
   const numeric = [
     {
-      label: "Agent score",
+      label: "Regression score",
       b: c.baseline.score, c: c.candidate.score,
       bd: <>{c.baseline.score}<span className="of">/100</span></>,
       cd: <>{c.candidate.score}<span className="of">/100</span></>,
@@ -214,7 +214,7 @@ export function ComparisonTable({
       <div className="panel-header">
         <div className="panel-title">
           <h2 id="metrics-heading">Head to head</h2>
-          <span className="panel-count">Same saved rules · change is candidate − baseline</span>
+          <span className="panel-count">Current evaluator · saved rules · candidate − baseline</span>
         </div>
       </div>
       <div className="table-scroll">
@@ -361,10 +361,12 @@ function SequenceCell({
   entry,
   side,
   trace,
+  retry = false,
 }: {
   entry?: Entry;
   side: "baseline" | "candidate";
   trace?: ToolTrace;
+  retry?: boolean;
 }) {
   if (!entry) return <div className="seq-cell is-empty" aria-hidden="true" />;
   const kind = category(entry);
@@ -376,9 +378,11 @@ function SequenceCell({
         {kind === "removed" ? <Minus size={11} strokeWidth={2.5} /> : kind === "added" ? <Plus size={11} strokeWidth={2.5} /> : kind === "reordered" ? <ArrowUpDown size={11} strokeWidth={2.5} /> : kind === "extra" ? <span>×</span> : null}
       </span>
       <code className="seq-name" title={entry.name}>{entry.name}</code>
-      {kind !== "unchanged" && (
+      {(kind !== "unchanged" || retry) && (
         <span className="seq-tag">
-          {kind === "removed"
+          {retry
+            ? "Retry after failure"
+            : kind === "removed"
             ? "Removed"
             : kind === "added"
               ? "Added"
@@ -411,6 +415,8 @@ export function ToolSequenceDiff({
 }) {
   const diff = sequenceDiff(baseline, candidate);
   const rows = alignRows(diff);
+  const baselineRetries = retryIndexes(baselineTraces);
+  const candidateRetries = retryIndexes(candidateTraces);
   const all = [...diff.baseline, ...diff.candidate];
   const counts = {
     shared: diff.baseline.filter((e) => e.change === "unchanged").length,
@@ -454,21 +460,22 @@ export function ToolSequenceDiff({
         {rows.map((row, i) => (
           <div className={cn("seq-row", row.shared && "is-shared")} role="row" key={i}>
             <div role="cell">
-              <SequenceCell entry={row.left} side="baseline" trace={row.left && baselineTraces[row.left.index]} />
+              <SequenceCell entry={row.left} side="baseline" retry={!!row.left && baselineRetries.has(row.left.index)} trace={row.left && baselineTraces[row.left.index]} />
             </div>
             <span className="seq-gutter" aria-hidden="true">
               {row.shared ? <Equal size={12} /> : null}
             </span>
             <div role="cell">
-              <SequenceCell entry={row.right} side="candidate" trace={row.right && candidateTraces[row.right.index]} />
+              <SequenceCell entry={row.right} side="candidate" retry={!!row.right && candidateRetries.has(row.right.index)} trace={row.right && candidateTraces[row.right.index]} />
             </div>
           </div>
         ))}
         {!rows.length && <p className="panel-empty">Neither run made tool calls.</p>}
       </div>
       <p className="panel-foot">
-        Compares tool-name occurrences only. Open each run&apos;s trace for
-        arguments, errors and retries.
+        Counts compare tool-name occurrences. Retry labels mark equivalent arguments
+        following an unblocked error; retries still count as extra occurrences when unmatched.
+        Other extra occurrences do not establish unnecessary duplication.
       </p>
     </section>
   );

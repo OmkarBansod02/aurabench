@@ -105,17 +105,17 @@ export default async function ComparePage({
           <div className="compare-evaluations">
             <EvaluationBreakdown
               evaluation={comparison.baselineEvaluation}
-              title="Baseline · rescored"
+              title="Baseline · Regression score"
             />
             <EvaluationBreakdown
               evaluation={comparison.candidateEvaluation}
-              title="Candidate · rescored"
+              title="Candidate · Regression score"
             />
           </div>
         </details>
         <p className="page-footnote">
           Both executions are rescored with the current evaluator against the
-          same saved expectations. A regression PASS requires the candidate to
+          same saved expectations; original run scores remain unchanged and may differ. A regression PASS requires the candidate to
           complete, pass its agent evaluation, and maintain or improve the total
           score. Live data, latency and token usage may vary between runs.
         </p>

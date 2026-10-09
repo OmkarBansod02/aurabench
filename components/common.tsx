@@ -125,7 +125,7 @@ export const scoreTone = (score: number): Tone =>
 export function MetricStrip({ run }: { run: StoredRun["run"] }) {
   const items: { label: string; value: React.ReactNode; sub?: string; tone?: Tone }[] = [
     {
-      label: "Agent score",
+      label: "Original run score",
       value: <ScoreValue score={run.score} size="lg" />,
     },
     { label: "Tool calls", value: run.toolCallCount },
@@ -154,7 +154,7 @@ export function MetricStrip({ run }: { run: StoredRun["run"] }) {
           <dt>{label}</dt>
           <dd>
             {value}
-            {label === "Agent score" && (
+            {label === "Original run score" && (
               <Meter value={run.score} max={100} tone={scoreTone(run.score)} />
             )}
           </dd>

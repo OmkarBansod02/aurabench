@@ -374,8 +374,14 @@ An equivalent call following a failed attempt is a retry, not automatically a
 duplicate. Every failure retains its existing penalty and reliability count.
 Repeated successful equivalent calls still incur duplicate deductions. Sequence
 comparison pairs LCS-unmatched tool-name occurrences as reorderings before showing
-additions/removals; extra occurrences are labeled separately. It does not compare
-arguments or infer whether an occurrence was a legitimate retry.
+additions/removals; extra occurrences are labeled separately. Counts still compare tool names. Retry annotations use an unblocked error followed
+by a call with equivalent recorded arguments; they do not establish agent intent
+or the original failure cause. Unmatched retries remain extra occurrences.
+
+Run Lab and Inspection label persisted evaluations **Original run score**.
+Regression History and Comparison label current evaluations against saved
+expectations **Regression score**, including the current agent verdict in history.
+Historical scores and findings remain unchanged.
 
 The recorded first `list-domains` error in v2 run
 `500f2ec3-5432-41ff-8a67-ffbad2538241` has `{}` arguments, a null result, and a

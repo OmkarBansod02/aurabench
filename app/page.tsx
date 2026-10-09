@@ -52,7 +52,7 @@ async function RecentRuns() {
       <div className="data-row data-head" role="row">
         <span role="columnheader">Agent eval</span>
         <span role="columnheader">Scenario</span>
-        <span role="columnheader" className="num">Score</span>
+        <span role="columnheader" className="num">Original run score</span>
         <span role="columnheader" className="num">Calls</span>
         <span role="columnheader" className="num">Latency</span>
         <span role="columnheader"><span className="sr-only">Open</span></span>
@@ -132,7 +132,7 @@ export default function Home() {
         </Suspense>
       </section>
       <section className="recent-runs" aria-labelledby="recent-heading">
-        <SectionHeader id="recent-heading" title="Recent executions" meta="Persisted runs · latest 20" />
+        <SectionHeader id="recent-heading" title="Recent executions" meta="Original scores · persisted at execution · latest 20" />
         <Suspense fallback={<RunsSkeleton />}>
           <RecentRuns />
         </Suspense>

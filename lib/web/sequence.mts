@@ -1,3 +1,38 @@
+import type { ToolTrace } from "../mcp/types.mts";
+
+// Only valid recorded JSON objects support an equivalent-arguments claim.
+function argumentKey(value: unknown): string | null {
+  if (typeof value === "string") {
+    try { value = JSON.parse(value); } catch { return null; }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const canonical = (item: unknown): string => {
+    if (Array.isArray(item)) return `[${item.map(canonical).join(",")}]`;
+    if (item !== null && typeof item === "object")
+      return `{${Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+        .map(([key, nested]) => `${JSON.stringify(key)}:${canonical(nested)}`).join(",")}}`;
+    return JSON.stringify(item) ?? "undefined";
+  };
+  return canonical(value);
+}
+
+/** Evidence of a repeated equivalent attempt after an error, not proof of intent.
+ * Use the latest equivalent attempt, so an intervening success ends a retry chain. */
+export function retryIndexes(traces: readonly ToolTrace[]): Set<number> {
+  const previous = new Map<string, ToolTrace>();
+  const retries = new Set<number>();
+  traces.forEach((trace, index) => {
+    const args = argumentKey(trace.arguments);
+    if (args === null) return;
+    const key = JSON.stringify([trace.toolName, args]);
+    const prior = previous.get(key);
+    if (!trace.blocked && trace.status !== "blocked" && prior?.status === "error" && !prior.blocked)
+      retries.add(index);
+    previous.set(key, trace);
+  });
+  return retries;
+}
+
 /** LCS anchors order; pair remaining equal names as moves, then count extras.
  * Compares tool names only, not arguments or success/retry semantics. */
 export function sequenceDiff(
