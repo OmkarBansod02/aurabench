@@ -1,12 +1,21 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { ArrowRight, History } from "lucide-react";
 import { withStore } from "@/lib/web/server";
-import { DatabaseError, EmptyState, PageHeader } from "@/components/common";
+import { DatabaseError, EmptyState, PageHeader, PageSkeleton } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { timestamp } from "@/lib/web/format";
 
-export default async function RegressionsPage() {
+export default function RegressionsPage() {
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <RegressionsContent />
+    </Suspense>
+  );
+}
+
+async function RegressionsContent() {
   await connection();
   const cases = await withStore((store) => store.listCases()).catch(() => null);
   return (

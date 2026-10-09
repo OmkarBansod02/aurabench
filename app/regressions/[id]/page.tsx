@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
@@ -11,6 +12,7 @@ import {
   ModelChip,
   OutcomeBadge,
   PageHeader,
+  PageSkeleton,
   ScoreValue,
   SectionHeader,
   TextLink,
@@ -21,7 +23,15 @@ import { ExecutionForm } from "@/components/execution-form";
 import { duration, timestamp, tokens } from "@/lib/web/format";
 import { cn } from "@/lib/utils";
 
-export default async function RegressionPage({
+export default function RegressionPage(props: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <RegressionContent {...props} />
+    </Suspense>
+  );
+}
+
+async function RegressionContent({
   params,
 }: {
   params: Promise<{ id: string }>;

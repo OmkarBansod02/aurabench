@@ -1,11 +1,20 @@
+import { Suspense } from "react";
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import { withStore } from "@/lib/web/server";
 import { uuid } from "@/lib/web/validation.mts";
-import { DatabaseError } from "@/components/common";
+import { DatabaseError, PageSkeleton } from "@/components/common";
 import { RunDetail } from "@/components/run-detail";
 
-export default async function RunPage({
+export default function RunPage(props: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <RunContent {...props} />
+    </Suspense>
+  );
+}
+
+async function RunContent({
   params,
 }: {
   params: Promise<{ id: string }>;

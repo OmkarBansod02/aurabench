@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -9,6 +10,7 @@ import {
   Breadcrumb,
   DatabaseError,
   PageHeader,
+  PageSkeleton,
   TextLink,
 } from "@/components/common";
 import {
@@ -21,7 +23,15 @@ import {
 import { EvaluationBreakdown } from "@/components/evaluation";
 import { Button } from "@/components/ui/button";
 
-export default async function ComparePage({
+export default function ComparePage(props: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <CompareContent {...props} />
+    </Suspense>
+  );
+}
+
+async function CompareContent({
   params,
 }: {
   params: Promise<{ id: string }>;
