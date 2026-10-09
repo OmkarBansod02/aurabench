@@ -27,7 +27,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <a href="#main" className="sr-only focus:not-sr-only">
+        <a href="#main" className="skip-link">
           Skip to content
         </a>
         <Suspense fallback={<NavigationFrame />}>
@@ -37,7 +37,10 @@ export default function RootLayout({
           {children}
         </main>
         <footer className="site-footer">
-          <span>Unofficial PingAura MCP Eval Lab</span>
+          <span>
+            Unofficial PingAura MCP Eval Lab · Independent project, not
+            affiliated with or endorsed by PingAura.
+          </span>
           <span>AuraBench · Trace. Evaluate. Improve.</span>
         </footer>
       </body>

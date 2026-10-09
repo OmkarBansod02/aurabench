@@ -13,8 +13,8 @@ import {
   DialogTrigger,
 } from "./ui/dialog";
 import { Field, FieldGroup, FieldLabel, FieldDescription } from "./ui/field";
-import { Alert, AlertTitle, AlertDescription } from "./ui/alert";
 import { postJson } from "./execution-form";
+import { Callout } from "./common";
 
 export function RegressionDialog({
   runId,
@@ -77,7 +77,7 @@ export function RegressionDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button>
+        <Button size="lg">
           <BookmarkPlus data-icon="inline-start" />
           Save as Regression
         </Button>
@@ -86,8 +86,8 @@ export function RegressionDialog({
         <DialogHeader>
           <DialogTitle>Save as Regression</DialogTitle>
           <DialogDescription>
-            Keep this run as a baseline. Replay another prompt or model against
-            the same expectations.
+            This run becomes the baseline. Future prompt or model replays are
+            scored against the same expectations and compared to it.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={save}>
@@ -99,6 +99,7 @@ export function RegressionDialog({
                 </FieldLabel>
                 <input
                   id="regression-name"
+                  className="input"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   maxLength={160}
@@ -106,19 +107,26 @@ export function RegressionDialog({
                 />
               </Field>
               <div className="dialog-context">
-                <span className="label">Scenario</span>
+                <span className="control-label">Scenario</span>
                 <p>{scenario}</p>
-                <details>
-                  <summary>
-                    Observed tool sequence · {sequence.length} calls
-                  </summary>
-                  <p className="mono">{sequence.join(" → ") || "No calls"}</p>
-                </details>
+                <span className="control-label">
+                  Observed sequence · {sequence.length}{" "}
+                  {sequence.length === 1 ? "call" : "calls"}
+                </span>
+                <ol className="dialog-sequence">
+                  {sequence.map((tool, i) => (
+                    <li key={i}>
+                      <code>{tool}</code>
+                    </li>
+                  ))}
+                  {!sequence.length && <li className="muted">No calls</li>}
+                </ol>
               </div>
               <Field>
                 <FieldLabel htmlFor="required-tools">Required tools</FieldLabel>
                 <input
                   id="required-tools"
+                  className="input"
                   value={required}
                   onChange={(e) => setRequired(e.target.value)}
                 />
@@ -127,7 +135,7 @@ export function RegressionDialog({
                 </FieldDescription>
               </Field>
               {!!expectations.requiredToolGroups?.length && (
-                <p className="muted">
+                <p className="hint">
                   Required groups are preserved:{" "}
                   {expectations.requiredToolGroups
                     .map((g) => `${g.name} (${g.tools.join(" or ")})`)
@@ -141,6 +149,7 @@ export function RegressionDialog({
                 </FieldLabel>
                 <input
                   id="forbidden-tools"
+                  className="input"
                   value={forbidden}
                   onChange={(e) => setForbidden(e.target.value)}
                 />
@@ -152,6 +161,7 @@ export function RegressionDialog({
                 <FieldLabel htmlFor="max-calls">Maximum tool calls</FieldLabel>
                 <input
                   id="max-calls"
+                  className="input"
                   type="number"
                   min={0}
                   max={100}
@@ -166,10 +176,7 @@ export function RegressionDialog({
             </FieldGroup>
           </fieldset>
           {error && (
-            <Alert variant="destructive">
-              <AlertTitle>Could not save regression</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
+            <Callout title="Could not save regression">{error}</Callout>
           )}
           <div className="dialog-actions">
             <Button

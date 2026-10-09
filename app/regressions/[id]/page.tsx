@@ -1,18 +1,25 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
+import { ArrowRight, Ban, Check, RotateCcw } from "lucide-react";
 import { withStore } from "@/lib/web/server";
 import { uuid } from "@/lib/web/validation.mts";
 import {
   Breadcrumb,
   DatabaseError,
-  ScoreBadge,
+  Meter,
+  ModelChip,
+  OutcomeBadge,
+  PageHeader,
+  ScoreValue,
+  SectionHeader,
   TextLink,
-  SafetyNote,
-  StatusBadge,
+  Verdict,
+  scoreTone,
 } from "@/components/common";
 import { ExecutionForm } from "@/components/execution-form";
 import { duration, timestamp, tokens } from "@/lib/web/format";
+import { cn } from "@/lib/utils";
 
 export default async function RegressionPage({
   params,
@@ -26,169 +33,237 @@ export default async function RegressionPage({
   } catch {
     notFound();
   }
-  const data = await withStore(async (store) => {
+  const data = await withStore(async (store, service) => {
     const saved = await store.getCase(id);
     if (!saved) return { saved: null, baseline: null, candidates: [] };
-    const [baseline, candidates] = await Promise.all([
+    const [baseline, rows] = await Promise.all([
       store.getRun(saved.baselineRunId),
       store.candidatesForCase(id),
     ]);
+    // Same comparison the compare screen renders, so history and detail always agree.
+    const candidates = baseline
+      ? await Promise.all(
+          rows.map(async (row) => ({
+            ...row,
+            comparison: await service.compare(saved.id, row.run.id),
+          })),
+        )
+      : [];
     return { saved, baseline, candidates };
   }).catch(() => null);
   if (!data) return <DatabaseError />;
   if (!data.saved || !data.baseline) notFound();
   const { saved, baseline, candidates } = data;
+  const b = baseline.run;
   return (
     <>
       <Breadcrumb
-        href="/regressions"
-        label="Regressions"
-        current={saved.name}
+        items={[
+          { href: "/regressions", label: "Regressions" },
+          { label: saved.name },
+        ]}
       />
-      <div className="page-title-row">
-        <div>
-          <h1>{saved.name}</h1>
-          <p className="page-description">{saved.scenario}</p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow={<span className="eyebrow">Regression</span>}
+        title={saved.name}
+        description={saved.scenario}
+        meta={
+          <>
+            <span>Saved {timestamp(saved.createdAt)}</span>
+            <span>
+              {candidates.length} {candidates.length === 1 ? "replay" : "replays"}
+            </span>
+          </>
+        }
+      />
       <div className="regression-layout">
-        <div>
-          <section className="panel baseline-panel">
-            <div className="section-heading">
-              <h2>Baseline</h2>
-              <TextLink href={`/runs/${baseline.run.id}`}>
-                Inspect execution
-              </TextLink>
+        <div className="regression-main">
+          <section className="panel step-panel" aria-labelledby="baseline-heading">
+            <SectionHeader
+              step={1}
+              id="baseline-heading"
+              title="Saved baseline"
+              actions={<TextLink href={`/runs/${b.id}`}>Inspect trace</TextLink>}
+            />
+            <div className="baseline-summary">
+              <div className="baseline-score">
+                <ScoreValue score={b.score} size="xl" />
+                <Meter value={b.score} max={100} tone={scoreTone(b.score)} />
+              </div>
+              <div className="baseline-facts">
+                <div className="pill-row">
+                  <Verdict passed={baseline.evaluation.passed} />
+                  <OutcomeBadge status={baseline.evaluation.taskOutcome.status} />
+                </div>
+                <div className="meta-row">
+                  <ModelChip model={b.model} prompt={b.promptVersion} />
+                  <span>{timestamp(b.createdAt)}</span>
+                </div>
+              </div>
+              <dl className="mini-metrics">
+                <div><dt>Calls</dt><dd>{b.toolCallCount}</dd></div>
+                <div><dt>Failed</dt><dd className={b.toolFailureCount ? "text-danger" : undefined}>{b.toolFailureCount}</dd></div>
+                <div><dt>Latency</dt><dd>{duration(b.latencyMs)}</dd></div>
+                <div><dt>Tokens</dt><dd>{tokens(b.totalTokens)}</dd></div>
+              </dl>
             </div>
-            <div className="baseline-score">
-              <ScoreBadge score={baseline.run.score} />
-              <span className="muted">
-                {baseline.run.model} · Prompt {baseline.run.promptVersion}
-              </span>
+            <div className="sub-section">
+              <span className="control-label">Recorded tool sequence</span>
+              <ol className="chip-sequence">
+                {baseline.traces.map((t) => (
+                  <li
+                    key={t.sequence}
+                    className={cn(t.blocked ? "is-blocked" : t.status !== "success" && "is-error")}
+                  >
+                    <span className="chip-index">{t.sequence}</span>
+                    <code>{t.toolName}</code>
+                  </li>
+                ))}
+                {!baseline.traces.length && <li className="muted">No tool calls</li>}
+              </ol>
             </div>
-            <p className="muted">{timestamp(baseline.run.createdAt)}</p>
-            <ol className="baseline-sequence">
-              {baseline.traces.map((t) => (
-                <li key={t.sequence}>
-                  <span>{t.sequence}</span>
-                  <code>{t.toolName}</code>
-                </li>
-              ))}
-            </ol>
           </section>
-          <section className="panel expectations-panel">
-            <div className="section-heading">
-              <h2>Expectations</h2>
-              <span className="muted">Saved rules</span>
-            </div>
+          <section className="panel step-panel" aria-labelledby="expectations-heading">
+            <SectionHeader
+              step={2}
+              id="expectations-heading"
+              title="Expectations"
+              meta="Saved rules applied to every replay"
+            />
             <dl className="expectations">
-              <div>
+              <div className="expect-row">
                 <dt>Required tools</dt>
                 <dd>
                   {saved.requiredTools.length
                     ? saved.requiredTools.map((name) => (
-                        <code key={name}>{name}</code>
+                        <code className="tool-chip is-required" key={name}>
+                          <Check size={12} aria-hidden="true" />
+                          {name}
+                        </code>
                       ))
-                    : "None"}
+                    : <span className="muted">None</span>}
                 </dd>
               </div>
               {saved.requiredToolGroups.map((g) => (
-                <div key={g.name}>
-                  <dt>{g.name} · one must succeed</dt>
+                <div className="expect-row" key={g.name}>
+                  <dt>
+                    {g.name}
+                    <span className="expect-note">one must succeed</span>
+                  </dt>
                   <dd>
-                    {g.tools.map((name) => (
-                      <code key={name}>{name}</code>
+                    {g.tools.map((name, i) => (
+                      <span key={name} className="chip-or">
+                        {i > 0 && <span className="or">or</span>}
+                        <code className="tool-chip is-required">{name}</code>
+                      </span>
                     ))}
                   </dd>
                 </div>
               ))}
-              <div>
+              <div className="expect-row">
                 <dt>Forbidden tools</dt>
                 <dd>
                   {saved.forbiddenTools.length
                     ? saved.forbiddenTools.map((name) => (
-                        <code key={name}>{name}</code>
+                        <code className="tool-chip is-forbidden" key={name}>
+                          <Ban size={12} aria-hidden="true" />
+                          {name}
+                        </code>
                       ))
-                    : "None specified"}
+                    : <span className="muted">None specified</span>}
+                  <span className="expect-note">Write and unknown tools are always blocked</span>
                 </dd>
               </div>
-              <div className="budget-row">
-                <dt>Maximum calls</dt>
-                <dd className="mono">{saved.maxToolCalls}</dd>
+            </dl>
+            <dl className="budget-grid">
+              <div>
+                <dt>Max tool calls</dt>
+                <dd>{saved.maxToolCalls}</dd>
               </div>
-              <div className="budget-row">
+              <div>
                 <dt>Token budget</dt>
-                <dd className="mono">
-                  {saved.maxTokens === null
-                    ? "Not set"
-                    : tokens(saved.maxTokens)}
+                <dd className={saved.maxTokens === null ? "muted" : undefined}>
+                  {saved.maxTokens === null ? "Not set" : tokens(saved.maxTokens)}
                 </dd>
               </div>
-              <div className="budget-row">
+              <div>
                 <dt>Latency budget</dt>
-                <dd className="mono">
-                  {saved.maxLatencyMs === null
-                    ? "Not set"
-                    : duration(saved.maxLatencyMs)}
+                <dd className={saved.maxLatencyMs === null ? "muted" : undefined}>
+                  {saved.maxLatencyMs === null ? "Not set" : duration(saved.maxLatencyMs)}
                 </dd>
               </div>
-              <div className="budget-row">
-                <dt>Successful agent execution</dt>
+              <div>
+                <dt>Successful execution</dt>
                 <dd>Required</dd>
               </div>
             </dl>
-            <SafetyNote />
           </section>
         </div>
-        <section className="panel replay-panel">
-          <div className="section-heading">
-            <h2>Replay candidate</h2>
-            <span className="muted">Live</span>
-          </div>
-          <p className="muted">
-            Run the same scenario with another prompt or model. Compare both
-            executions against the saved expectations.
-          </p>
-          <ExecutionForm
-            regressionId={id}
-            initialModel={baseline.run.model}
-            defaultModel={process.env.OPENAI_MODEL?.trim() || "gpt-5"}
-          />
-          <p className="replay-disclaimer">
-            Live replay reads current PingAura data. Latency and token usage may
-            vary between executions.
-          </p>
-        </section>
+        <aside className="regression-aside">
+          <section className="panel step-panel replay-panel" aria-labelledby="replay-heading">
+            <SectionHeader step={3} id="replay-heading" title="Replay a candidate" meta="Live" />
+            <ExecutionForm
+              regressionId={id}
+              initialModel={b.model}
+              defaultModel={process.env.OPENAI_MODEL?.trim() || "gpt-5"}
+              baseline={{ model: b.model, promptVersion: b.promptVersion }}
+            />
+            <p className="panel-foot">
+              Live replay reads current PingAura data. Latency and token usage
+              may vary between executions.
+            </p>
+          </section>
+        </aside>
       </div>
-      {!!candidates.length && (
-        <section className="recent-runs">
-          <div className="section-heading">
-            <h2>Replay history</h2>
-            <span className="muted">
-              Latest {candidates.length} · evaluation status below
-            </span>
-          </div>
-          <div className="run-rows">
-            {candidates.map(({ run, passed }) => (
-              <Link
-                className="run-row"
-                href={`/compare/${run.id}`}
-                key={run.id}
-              >
-                <StatusBadge passed={passed} />
-                <div className="run-row-main">
-                  <strong>
-                    {run.model} · Prompt {run.promptVersion}
-                  </strong>
-                  <span>{timestamp(run.createdAt)}</span>
-                </div>
-                <span className="mono">{run.score} / 100</span>
-                <span>Compare ↗</span>
-              </Link>
+      <section className="history" aria-labelledby="history-heading">
+        <SectionHeader
+          id="history-heading"
+          title="Replay history"
+          meta={candidates.length ? `Latest ${candidates.length}` : undefined}
+        />
+        {candidates.length ? (
+          <div className="data-table history-table" role="table" aria-label="Replay history">
+            <div className="data-row data-head" role="row">
+              <span role="columnheader">Regression</span>
+              <span role="columnheader">Candidate</span>
+              <span role="columnheader" className="num">Score Δ</span>
+              <span role="columnheader">Agent eval</span>
+              <span role="columnheader" className="num">Calls</span>
+              <span role="columnheader" className="num">Latency</span>
+              <span role="columnheader">Replayed</span>
+              <span role="columnheader"><span className="sr-only">Open</span></span>
+            </div>
+            {candidates.map(({ run, passed, comparison }) => (
+                <Link className="data-row" role="row" href={`/compare/${run.id}`} key={run.id}>
+                  <span role="cell"><Verdict passed={comparison.result === "PASS"} label="" size="sm" /></span>
+                  <span role="cell"><ModelChip model={run.model} prompt={run.promptVersion} /></span>
+                  <span role="cell" className="num mono">
+                    {comparison.baseline.score}→{comparison.candidate.score}{" "}
+                    <span className={comparison.scoreDelta > 0 ? "text-success" : comparison.scoreDelta < 0 ? "text-danger" : "muted"}>
+                      {comparison.scoreDelta === 0 ? "±0" : comparison.scoreDelta > 0 ? `+${comparison.scoreDelta}` : comparison.scoreDelta}
+                    </span>
+                  </span>
+                  <span role="cell" className={passed ? "text-success" : "text-danger"}>{passed ? "Pass" : "Fail"}</span>
+                  <span role="cell" className="num mono">{run.toolCallCount}</span>
+                  <span role="cell" className="num mono">{duration(run.latencyMs)}</span>
+                  <span role="cell" className="muted">{timestamp(run.createdAt)}</span>
+                  <span role="cell" className="row-cta">
+                    Compare
+                    <ArrowRight size={14} aria-hidden="true" />
+                  </span>
+                </Link>
             ))}
           </div>
-        </section>
-      )}
+        ) : (
+          <div className="inline-empty">
+            <RotateCcw size={16} aria-hidden="true" />
+            <span>
+              No replays yet. Choose a candidate prompt or model above and replay
+              it against this baseline.
+            </span>
+          </div>
+        )}
+      </section>
     </>
   );
 }

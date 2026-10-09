@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { connection } from "next/server";
+import { ArrowRight, History } from "lucide-react";
 import { withStore } from "@/lib/web/server";
-import { DatabaseError, EmptyState, TextLink } from "@/components/common";
+import { DatabaseError, EmptyState, PageHeader } from "@/components/common";
+import { Button } from "@/components/ui/button";
 import { timestamp } from "@/lib/web/format";
 
 export default async function RegressionsPage() {
@@ -9,41 +11,56 @@ export default async function RegressionsPage() {
   const cases = await withStore((store) => store.listCases()).catch(() => null);
   return (
     <>
-      <div className="page-title-row">
-        <div>
-          <h1>Regressions</h1>
-          <p className="page-description">
-            Saved baselines. Repeatable expectations. Better agents.
-          </p>
-        </div>
-        <TextLink href="/">Run a new scenario</TextLink>
-      </div>
+      <PageHeader
+        eyebrow={<span className="eyebrow">Saved baselines</span>}
+        title="Regressions"
+        description="Each regression pins a baseline run and its expectations. Replay a new prompt or model to see whether it improves or regresses."
+        actions={
+          <Button asChild variant="outline" size="lg">
+            <Link href="/">Run a new scenario</Link>
+          </Button>
+        }
+      />
       {!cases ? (
         <DatabaseError />
       ) : !cases.length ? (
-        <EmptyState title="No regressions yet">
-          Open a completed run and choose Save as Regression. Its trace and
-          evaluation become your baseline for future replays.
+        <EmptyState
+          title="No regressions yet"
+          icon={<History size={18} aria-hidden="true" />}
+          action={
+            <Button asChild size="lg">
+              <Link href="/">Go to the run lab</Link>
+            </Button>
+          }
+        >
+          <p>
+            Open a completed run and choose <strong>Save as Regression</strong>.
+            Its trace and evaluation become the baseline for future replays.
+          </p>
         </EmptyState>
       ) : (
-        <section className="panel regression-list">
+        <div className="data-table regressions-table" role="table" aria-label="Saved regressions">
+          <div className="data-row data-head" role="row">
+            <span role="columnheader">Regression</span>
+            <span role="columnheader" className="num">Call budget</span>
+            <span role="columnheader">Saved</span>
+            <span role="columnheader"><span className="sr-only">Open</span></span>
+          </div>
           {cases.map((c) => (
-            <Link
-              className="regression-list-row"
-              href={`/regressions/${c.id}`}
-              key={c.id}
-            >
-              <div>
-                <h2>{c.name}</h2>
-                <p>{c.scenario}</p>
-                <span className="muted">
-                  {timestamp(c.createdAt)} · {c.maxToolCalls} call budget
-                </span>
-              </div>
-              <span aria-hidden="true">↗</span>
+            <Link className="data-row" role="row" href={`/regressions/${c.id}`} key={c.id}>
+              <span role="cell" className="run-cell">
+                <span className="run-name">{c.name}</span>
+                <span className="run-scenario is-secondary">{c.scenario}</span>
+              </span>
+              <span role="cell" className="num mono">≤ {c.maxToolCalls}</span>
+              <span role="cell" className="muted">{timestamp(c.createdAt)}</span>
+              <span role="cell" className="row-cta">
+                Open
+                <ArrowRight size={14} aria-hidden="true" />
+              </span>
             </Link>
           ))}
-        </section>
+        </div>
       )}
     </>
   );

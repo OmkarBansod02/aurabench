@@ -1,21 +1,25 @@
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { ChevronDown, RotateCcw } from "lucide-react";
 import { withStore } from "@/lib/web/server";
 import { uuid } from "@/lib/web/validation.mts";
+import { timestamp } from "@/lib/web/format";
 import {
   Breadcrumb,
   DatabaseError,
-  StatusBadge,
+  PageHeader,
   TextLink,
 } from "@/components/common";
 import {
   ComparisonTable,
-  ToolSequenceDiff,
   ComparisonFindings,
+  ScoreBreakdown,
+  ToolSequenceDiff,
+  VerdictBanner,
 } from "@/components/comparison";
 import { EvaluationBreakdown } from "@/components/evaluation";
-import { buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 
 export default async function ComparePage({
   params,
@@ -46,18 +50,37 @@ export default async function ComparePage({
   return (
     <>
       <Breadcrumb
-        href={`/regressions/${saved.id}`}
-        label="Regressions"
-        current={saved.name}
+        items={[
+          { href: "/regressions", label: "Regressions" },
+          { href: `/regressions/${saved.id}`, label: saved.name },
+          { label: "Comparison" },
+        ]}
       />
-      <article className="panel comparison-surface">
-        <div className="page-title-row">
-          <div>
-            <h1>Regression comparison</h1>
-            <p className="page-description">{saved.scenario}</p>
-          </div>
-          <StatusBadge label="Comparison" passed={comparison.result === "PASS"} />
-        </div>
+      <PageHeader
+        eyebrow={<span className="eyebrow">Baseline vs candidate</span>}
+        title={saved.name}
+        description={saved.scenario}
+        meta={
+          <span>
+            Candidate replayed{" "}
+            <time dateTime={candidate.run.createdAt}>{timestamp(candidate.run.createdAt)}</time>
+          </span>
+        }
+        actions={
+          <>
+            <TextLink href={`/runs/${baseline.run.id}`}>Baseline trace</TextLink>
+            <TextLink href={`/runs/${candidate.run.id}`}>Candidate trace</TextLink>
+            <Button asChild variant="outline" size="lg">
+              <Link href={`/regressions/${saved.id}`}>
+                <RotateCcw data-icon="inline-start" />
+                Replay again
+              </Link>
+            </Button>
+          </>
+        }
+      />
+      <div className="compare-stack">
+        <VerdictBanner comparison={comparison} candidate={candidate.run} />
         <ComparisonTable
           comparison={comparison}
           baseline={baseline.run}
@@ -66,40 +89,37 @@ export default async function ComparePage({
         <ToolSequenceDiff
           baseline={comparison.baselineToolSequence}
           candidate={comparison.candidateToolSequence}
+          baselineTraces={baseline.traces}
+          candidateTraces={candidate.traces}
         />
-        <ComparisonFindings comparison={comparison} />
-        <div className="comparison-actions">
-          <div>
-            <TextLink href={`/runs/${baseline.run.id}`}>
-              Inspect baseline
-            </TextLink>
-            <TextLink href={`/runs/${candidate.run.id}`}>
-              Inspect candidate
-            </TextLink>
-          </div>
-          <Link href={`/regressions/${saved.id}`} className={buttonVariants()}>
-            Replay again →
-          </Link>
+        <div className="compare-split">
+          <ScoreBreakdown comparison={comparison} />
+          <ComparisonFindings comparison={comparison} />
         </div>
-      </article>
-      <p className="comparison-note">
-        Both executions rescored with the current evaluator against the same saved expectations. PASS
-        requires the candidate to pass and maintain or improve the total score.
-        Live data, latency, and token usage may vary.
-      </p>
-      <details className="comparison-details">
-        <summary>Evaluation breakdowns & findings</summary>
-        <div className="comparison-evaluations">
-          <div>
-            <h2>Baseline · rescored</h2>
-            <EvaluationBreakdown evaluation={comparison.baselineEvaluation} />
+        <details className="disclosure-panel">
+          <summary>
+            <ChevronDown size={15} aria-hidden="true" />
+            Full evaluations & findings
+            <span className="panel-count">Both runs rescored with the current evaluator</span>
+          </summary>
+          <div className="compare-evaluations">
+            <EvaluationBreakdown
+              evaluation={comparison.baselineEvaluation}
+              title="Baseline · rescored"
+            />
+            <EvaluationBreakdown
+              evaluation={comparison.candidateEvaluation}
+              title="Candidate · rescored"
+            />
           </div>
-          <div>
-            <h2>Candidate · rescored</h2>
-            <EvaluationBreakdown evaluation={comparison.candidateEvaluation} />
-          </div>
-        </div>
-      </details>
+        </details>
+        <p className="page-footnote">
+          Both executions are rescored with the current evaluator against the
+          same saved expectations. A regression PASS requires the candidate to
+          complete, pass its agent evaluation, and maintain or improve the total
+          score. Live data, latency and token usage may vary between runs.
+        </p>
+      </div>
     </>
   );
 }
